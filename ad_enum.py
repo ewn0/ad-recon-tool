@@ -109,3 +109,59 @@ def construire_parseur() -> argparse.ArgumentParser:
     groupe_audit.add_argument(
         "--users", "-u",
         action="store_true",
+        help="Audit des comptes utilisateurs (inactifs, MDP permanent, etc.)",
+    )
+    groupe_audit.add_argument(
+        "--computers", "-c",
+        action="store_true",
+        help="Audit des machines (OS obsolètes, inactives, etc.)",
+    )
+
+    # ── Groupe : Options ──────────────────────────────────────────────────
+    groupe_options = parseur.add_argument_group("Options")
+    groupe_options.add_argument(
+        "--export", "-e",
+        metavar="FICHIER",
+        help="Exporter les résultats au format JSON dans un fichier",
+    )
+    groupe_options.add_argument(
+        "--inactif-jours",
+        type=int,
+        default=90,
+        metavar="JOURS",
+        help="Seuil d'inactivité en jours (défaut : 90)",
+    )
+    groupe_options.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Afficher des informations détaillées sur les requêtes LDAP",
+    )
+
+    return parseur
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPORT JSON
+# ─────────────────────────────────────────────────────────────────────────────
+
+def exporter_json(resultats: dict, chemin_fichier: str) -> None:
+    """
+    Exporte le dictionnaire de résultats dans un fichier JSON.
+
+    Args:
+        resultats (dict)       : Données à exporter.
+        chemin_fichier (str)   : Chemin du fichier de sortie.
+    """
+    try:
+        with open(chemin_fichier, "w", encoding="utf-8") as f:
+            json.dump(resultats, f, ensure_ascii=False, indent=4, default=str)
+        print(f"\n[✔] Résultats exportés dans : {chemin_fichier}")
+    except IOError as erreur:
+        print(f"\n[✘] Impossible d'écrire le fichier d'export : {erreur}")
+        sys.exit(1)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POINT D'ENTRÉE PRINCIPAL
+# ─────────────────────────────────────────────────────────────────────────────
+
