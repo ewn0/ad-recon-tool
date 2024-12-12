@@ -203,3 +203,112 @@ def lister_os_obsoletes(
         derniere_co = filetime_vers_datetime(ft) if ft else None
         date_str = derniere_co.strftime("%d/%m/%Y") if derniere_co else "Jamais"
 
+        os_nom = str(entree.operatingSystem) if entree.operatingSystem else "Inconnu"
+
+        donnees = {
+            "nom": str(entree.cn),
+            "os": os_nom,
+            "version": str(entree.operatingSystemVersion) if entree.operatingSystemVersion else "N/A",
+            "dns": str(entree.dNSHostName) if entree.dNSHostName else "N/A",
+            "derniere_connexion": date_str,
+            "risque": "CRITIQUE" if any(eol in os_nom for eol in [
+                "Windows XP", "Windows Server 2003", "Windows Server 2000"
+            ]) else "ELEVÉ",
+        }
+        resultats.append(donnees)
+        lignes_tableau.append([
+            donnees["nom"],
+            donnees["os"],
+            donnees["version"],
+            donnees["derniere_connexion"],
+            donnees["risque"],
+        ])
+
+    afficher_tableau(
+        titre="⚠  Machines avec OS obsolète (End of Life)",
+        en_tetes=["Nom machine", "Système d'exploitation", "Version", "Dernière connexion", "Niveau de risque"],
+        lignes=lignes_tableau,
+    )
+
+    if resultats:
+        print(
+            "\n  [!] ATTENTION : Ces machines ne reçoivent plus les mises à jour de sécurité.\n"
+            "      → Planifier une migration ou isolation réseau en urgence."
+        )
+
+    return resultats
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. MACHINES INACTIVES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def lister_machines_inactives(
+    connexion: Connection,
+    domaine: str,
+    seuil_jours: int = 90,
+) -> list[dict]:
+    """
+    Identifie les machines du domaine dont la dernière connexion au contrôleur
+    de domaine remonte à plus de N jours. Une machine inactive depuis longtemps
+    peut indiquer :
+      - Un poste hors service / décommissionné mais toujours dans l'AD
+      - Un poste non géré (laptops oubliés, VMs dormantes)
+      - Un poste sans GPO appliquées (risque de dérive de configuration)
+
+    Args:
+        connexion   (Connection) : Objet de connexion LDAP actif.
+        domaine     (str)        : Nom de domaine FQDN.
+        seuil_jours (int)        : Nombre de jours d'inactivité (défaut : 90).
+
+    Returns:
+        list[dict]: Liste des machines inactives.
+    """
+    print(f"\n[*] Recherche des machines inactives depuis plus de {seuil_jours} jours...")
+
+    base_dn = construire_base_dn(domaine)
+
+    # Calcul de la date limite convertie en FILETIME
+    date_limite = datetime.now(tz=timezone.utc) - timedelta(days=seuil_jours)
+    filetime_limite = int((date_limite.timestamp() + EPOCH_DIFF_SECONDES) * 10_000_000)
+
+    # Filtre : machines actives dont la dernière connexion est antérieure à la limite
+    filtre = (
+        f"(&(objectClass=computer)"
+        f"(!(userAccountControl:1.2.840.113556.1.4.803:=2))"  # Actives uniquement
+        f"(lastLogonTimestamp<={filetime_limite}))"
+    )
+
+    attributs = [
+        "cn",
+        "operatingSystem",
+        "lastLogonTimestamp",
+        "dNSHostName",
+        "description",
+    ]
+
+    try:
+        connexion.search(
+            search_base=base_dn,
+            search_filter=filtre,
+            search_scope=SUBTREE,
+            attributes=attributs,
+        )
+    except LDAPException as erreur:
+        print(f"[✘] Erreur lors de la recherche des machines inactives : {erreur}")
+        return []
+
+    resultats = []
+    lignes_tableau = []
+
+    for entree in connexion.entries:
+        ft = entree.lastLogonTimestamp.value
+        derniere_co = filetime_vers_datetime(ft) if ft else None
+
+        if derniere_co:
+            jours_inactif = (datetime.now(tz=timezone.utc) - derniere_co).days
+            date_str = derniere_co.strftime("%d/%m/%Y")
+        else:
+            jours_inactif = "?"
+            date_str = "Jamais"
+

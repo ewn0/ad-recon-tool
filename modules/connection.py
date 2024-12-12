@@ -122,3 +122,70 @@ def creer_connexion(
     if verbose:
         print(f"    [>] Authentification NTLM en tant que : {user_ntlm}")
 
+    # ── Étape 3 : Tentative de connexion ─────────────────────────────────
+    try:
+        connexion = Connection(
+            server=serveur,
+            user=user_ntlm,
+            password=password,
+            authentication=NTLM,
+            client_strategy=SYNC,   # SYNC peuple connexion.entries après chaque search()
+            auto_bind=True,         # Lance le bind automatiquement
+            raise_exceptions=True,  # Lève des exceptions en cas d'erreur
+        )
+
+    except LDAPInvalidCredentialsResult as erreur:
+        # Le DC a répondu mais les identifiants sont rejetés
+        # On parse le sous-code AD dans le message d'erreur pour un diagnostic précis
+        message = str(erreur)
+        sous_codes_ad = {
+            "52e": "Mot de passe incorrect",
+            "525": "Compte introuvable dans l'annuaire",
+            "530": "Connexion non autorisée à cette heure",
+            "531": "Connexion non autorisée depuis ce poste",
+            "532": "Mot de passe expiré — changement requis",
+            "533": "Compte désactivé",
+            "701": "Compte expiré",
+            "773": "L'utilisateur doit changer son mot de passe à la prochaine connexion",
+            "775": "Compte verrouillé",
+        }
+        # Extraction du sous-code (ex: "data 52e" dans le message)
+        diagnostic = "Identifiants refusés par le contrôleur de domaine"
+        for code, libelle in sous_codes_ad.items():
+            if f"data {code}" in message:
+                diagnostic = f"Code AD {code} — {libelle}"
+                break
+        print(
+            f"\n[✘] Échec d'authentification LDAP : {diagnostic}\n"
+            f"    → Compte utilisé : {user_ntlm}\n"
+            "    → Vérifiez USERNAME et PASSWORD dans votre fichier .env"
+        )
+        return None
+
+    except LDAPBindError:
+        # Erreur de bind générique (protocole)
+        print(
+            "\n[✘] Échec d'authentification LDAP.\n"
+            "    → Vérifiez le nom d'utilisateur et le mot de passe dans .env.\n"
+            "    → Vérifiez que le compte n'est pas verrouillé."
+        )
+        return None
+
+    except LDAPSocketOpenError:
+        # Problème réseau : DC inaccessible ou port fermé
+        print(
+            f"\n[✘] Impossible de joindre le contrôleur de domaine : {dc_ip}:{PORT_LDAP}\n"
+            "    → Vérifiez que la machine est accessible (ping, pare-feu).\n"
+            "    → Vérifiez que le service LDAP est actif sur le DC."
+        )
+        return None
+
+    except LDAPSocketSendError:
+        # Connexion interrompue pendant l'envoi
+        print(
+            "\n[✘] La connexion au DC a été interrompue pendant la communication.\n"
+            "    → Vérifiez la stabilité du réseau."
+        )
+        return None
+
+    except LDAPException as erreur:

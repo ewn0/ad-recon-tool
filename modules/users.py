@@ -280,3 +280,153 @@ def lister_utilisateurs_mdp_permanent(
     resultats = []
     lignes_tableau = []
 
+    for entree in connexion.entries:
+        # Conversion de la date du dernier changement de mot de passe
+        pwd_last_set = entree.pwdLastSet.value
+        date_mdp = filetime_vers_datetime(pwd_last_set) if pwd_last_set else None
+        date_str = date_mdp.strftime("%d/%m/%Y") if date_mdp else "Jamais changé"
+
+        # Vérification si le compte est désactivé
+        uac = int(entree.userAccountControl.value) if entree.userAccountControl else 0
+        est_desactive = bool(uac & FLAG_COMPTE_DESACTIVE)
+
+        donnees = {
+            "sam_account": str(entree.sAMAccountName),
+            "nom_complet": str(entree.displayName) if entree.displayName else "N/A",
+            "dernier_changement_mdp": date_str,
+            "est_desactive": est_desactive,
+            "departement": str(entree.department) if entree.department else "N/A",
+        }
+        resultats.append(donnees)
+        lignes_tableau.append([
+            donnees["sam_account"],
+            donnees["nom_complet"],
+            donnees["dernier_changement_mdp"],
+            "Oui ⚠" if est_desactive else "Non",
+            donnees["departement"],
+        ])
+
+    afficher_tableau(
+        titre="Comptes avec MDP permanent (DONT_EXPIRE_PASSWD)",
+        en_tetes=["Compte", "Nom complet", "Dernier changement MDP", "Désactivé", "Département"],
+        lignes=lignes_tableau,
+    )
+
+    return resultats
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. COMPTES PRIVILÉGIÉS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def lister_comptes_privilegies(
+    connexion: Connection,
+    domaine: str,
+) -> dict[str, list]:
+    """
+    Liste les membres des groupes privilégiés sensibles d'Active Directory.
+    La surveillance des groupes privilégiés est une pratique fondamentale
+    du SOC (détection d'escalade de privilèges, comptes de service excessifs).
+
+    Args:
+        connexion (Connection) : Objet de connexion LDAP actif.
+        domaine   (str)        : Nom de domaine FQDN.
+
+    Returns:
+        dict[str, list]: Dictionnaire {nom_groupe: [liste des membres]}.
+    """
+    print("\n[*] Inventaire des membres des groupes privilégiés...")
+
+    base_dn = construire_base_dn(domaine)
+    rapport_groupes = {}
+
+    for nom_groupe in GROUPES_PRIVILEGIES:
+        # Recherche du groupe par son nom
+        filtre_groupe = f"(&(objectClass=group)(sAMAccountName={nom_groupe}))"
+
+        try:
+            connexion.search(
+                search_base=base_dn,
+                search_filter=filtre_groupe,
+                search_scope=SUBTREE,
+                attributes=["member", "distinguishedName"],
+            )
+        except LDAPException as erreur:
+            print(f"  [!] Erreur lors de la recherche du groupe '{nom_groupe}' : {erreur}")
+            continue
+
+        if not connexion.entries:
+            # Le groupe n'existe pas dans cet AD (certains groupes sont optionnels)
+            continue
+
+        membres_bruts = connexion.entries[0].member.values if connexion.entries[0].member else []
+        membres = []
+
+        for dn_membre in membres_bruts:
+            # Extraction du CN (Common Name) depuis le Distinguished Name
+            # Format DN : "CN=Prénom Nom,OU=...,DC=..."
+            try:
+                cn = dn_membre.split(",")[0].replace("CN=", "").strip()
+            except (IndexError, AttributeError):
+                cn = str(dn_membre)
+
+            membres.append(cn)
+
+        rapport_groupes[nom_groupe] = membres
+
+        # Affichage du groupe et de ses membres
+        print(f"\n  ┌─── Groupe : {nom_groupe} ({len(membres)} membre(s))")
+        if membres:
+            for m in membres:
+                print(f"  │   ├── {m}")
+        else:
+            print("  │   └── (aucun membre direct)")
+        print("  └" + "─" * 50)
+
+    return rapport_groupes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. COMPTES DÉSACTIVÉS ENCORE DANS DES GROUPES
+# ─────────────────────────────────────────────────────────────────────────────
+
+def lister_comptes_desactives_actifs(
+    connexion: Connection,
+    domaine: str,
+) -> list[dict]:
+    """
+    Identifie les comptes désactivés qui sont encore membres de groupes AD.
+    Ce phénomène est fréquent lors de départs non gérés (offboarding).
+    Un compte désactivé avec des appartenances de groupes peut représenter
+    un risque si le compte est réactivé par erreur ou malveillance.
+
+    Args:
+        connexion (Connection) : Objet de connexion LDAP actif.
+        domaine   (str)        : Nom de domaine FQDN.
+
+    Returns:
+        list[dict]: Liste des comptes désactivés avec leurs groupes.
+    """
+    print("\n[*] Recherche des comptes désactivés encore membres de groupes...")
+
+    base_dn = construire_base_dn(domaine)
+
+    # Filtre : comptes désactivés (userAccountControl bit 2 = ACCOUNTDISABLE)
+    filtre = (
+        "(&(objectCategory=person)(objectClass=user)(!(objectClass=computer))"
+        "(userAccountControl:1.2.840.113556.1.4.803:=2)"
+        "(memberOf=*))"  # Avec au moins une appartenance à un groupe
+    )
+
+    attributs = ["sAMAccountName", "displayName", "memberOf", "whenChanged"]
+
+    try:
+        connexion.search(
+            search_base=base_dn,
+            search_filter=filtre,
+            search_scope=SUBTREE,
+            attributes=attributs,
+        )
+    except LDAPException as erreur:
+        print(f"[✘] Erreur lors de la recherche LDAP (comptes désactivés) : {erreur}")
+        return []
