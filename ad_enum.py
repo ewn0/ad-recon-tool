@@ -165,3 +165,53 @@ def exporter_json(resultats: dict, chemin_fichier: str) -> None:
 # POINT D'ENTRÉE PRINCIPAL
 # ─────────────────────────────────────────────────────────────────────────────
 
+def main():
+    """Fonction principale : parse les arguments, connecte et lance les audits."""
+
+    # ── Affichage de la bannière ──────────────────────────────────────────
+    afficher_banniere()
+
+    # ── Parsing des arguments ─────────────────────────────────────────────
+    parseur = construire_parseur()
+    args = parseur.parse_args()
+
+    # Vérification : au moins un module doit être sélectionné
+    if not (args.all or args.users or args.computers):
+        parseur.print_help()
+        print("\n[!] Erreur : spécifiez au moins un module (--all, --users, --computers).")
+        sys.exit(1)
+
+    # ── Récupération des variables d'environnement ────────────────────────
+    dc_ip    = os.getenv("DC_IP")
+    domaine  = os.getenv("DOMAIN")
+    username = os.getenv("AD_USERNAME")  # AD_USERNAME évite le conflit avec la variable système Windows USERNAME
+    password = os.getenv("AD_PASSWORD")  # AD_PASSWORD par cohérence
+
+    # Validation de la présence des variables obligatoires
+    variables_manquantes = [
+        var for var, val in {
+            "DC_IP": dc_ip,
+            "DOMAIN": domaine,
+            "AD_USERNAME": username,
+            "AD_PASSWORD": password,
+        }.items() if not val
+    ]
+
+    if variables_manquantes:
+        print(
+            f"\n[✘] Variables d'environnement manquantes : "
+            f"{', '.join(variables_manquantes)}"
+        )
+        print("    → Copiez .env.example vers .env et renseignez les valeurs.")
+        sys.exit(1)
+
+    # ── Connexion au contrôleur de domaine ────────────────────────────────
+    connexion = creer_connexion(dc_ip, domaine, username, password, args.verbose)
+
+    if connexion is None:
+        sys.exit(1)
+
+    # ── Initialisation du rapport ─────────────────────────────────────────
+    rapport = {
+        "metadata": {
+            "domaine": domaine,
