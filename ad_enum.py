@@ -215,3 +215,42 @@ def main():
     rapport = {
         "metadata": {
             "domaine": domaine,
+            "dc_ip": dc_ip,
+            "date_audit": datetime.now().isoformat(),
+            "seuil_inactivite_jours": args.inactif_jours,
+        }
+    }
+
+    # ── Module : Utilisateurs ─────────────────────────────────────────────
+    if args.all or args.users:
+        print("\n\n" + "═" * 65)
+        print("  MODULE : AUDIT DES COMPTES UTILISATEURS")
+        print("═" * 65)
+
+        rapport["utilisateurs"] = {}
+
+        # Utilisateurs inactifs
+        inactifs = lister_utilisateurs_inactifs(connexion, domaine, args.inactif_jours)
+        rapport["utilisateurs"]["inactifs"] = inactifs
+
+        # Mots de passe permanents
+        mdp_permanent = lister_utilisateurs_mdp_permanent(connexion, domaine)
+        rapport["utilisateurs"]["mdp_permanent"] = mdp_permanent
+
+        # Comptes privilégiés
+        privilegies = lister_comptes_privilegies(connexion, domaine)
+        rapport["utilisateurs"]["comptes_privilegies"] = privilegies
+
+        # Comptes désactivés encore présents dans des groupes actifs
+        desactives = lister_comptes_desactives_actifs(connexion, domaine)
+        rapport["utilisateurs"]["desactives_groupes_actifs"] = desactives
+
+    # ── Module : Machines ─────────────────────────────────────────────────
+    if args.all or args.computers:
+        print("\n\n" + "═" * 65)
+        print("  MODULE : AUDIT DES POSTES ET SERVEURS")
+        print("═" * 65)
+
+        rapport["machines"] = {}
+
+        # Toutes les machines
