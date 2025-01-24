@@ -430,3 +430,41 @@ def lister_comptes_desactives_actifs(
     except LDAPException as erreur:
         print(f"[✘] Erreur lors de la recherche LDAP (comptes désactivés) : {erreur}")
         return []
+
+    resultats = []
+    lignes_tableau = []
+
+    for entree in connexion.entries:
+        groupes_bruts = entree.memberOf.values if entree.memberOf else []
+        # Extraction des noms de groupes depuis les DN
+        noms_groupes = []
+        for dn_groupe in groupes_bruts:
+            try:
+                cn_groupe = dn_groupe.split(",")[0].replace("CN=", "").strip()
+                noms_groupes.append(cn_groupe)
+            except (IndexError, AttributeError):
+                noms_groupes.append(str(dn_groupe))
+
+        donnees = {
+            "sam_account": str(entree.sAMAccountName),
+            "nom_complet": str(entree.displayName) if entree.displayName else "N/A",
+            "nb_groupes": len(noms_groupes),
+            "groupes": noms_groupes,
+            "derniere_modif": str(entree.whenChanged.value)[:10] if entree.whenChanged else "N/A",
+        }
+        resultats.append(donnees)
+        lignes_tableau.append([
+            donnees["sam_account"],
+            donnees["nom_complet"],
+            str(donnees["nb_groupes"]),
+            ", ".join(donnees["groupes"][:3]) + ("..." if len(donnees["groupes"]) > 3 else ""),
+            donnees["derniere_modif"],
+        ])
+
+    afficher_tableau(
+        titre="Comptes désactivés avec appartenances de groupes",
+        en_tetes=["Compte", "Nom complet", "Nb groupes", "Groupes (extrait)", "Dernière modif."],
+        lignes=lignes_tableau,
+    )
+
+    return resultats

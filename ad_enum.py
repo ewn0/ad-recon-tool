@@ -254,3 +254,26 @@ def main():
         rapport["machines"] = {}
 
         # Toutes les machines
+        toutes = lister_toutes_les_machines(connexion, domaine)
+        rapport["machines"]["inventaire_complet"] = toutes
+
+        # OS obsolètes
+        obsoletes = lister_os_obsoletes(connexion, domaine)
+        rapport["machines"]["os_obsoletes"] = obsoletes
+
+        # Machines inactives
+        inactives = lister_machines_inactives(connexion, domaine, args.inactif_jours)
+        rapport["machines"]["inactives"] = inactives
+
+    # ── Export JSON (optionnel) ───────────────────────────────────────────
+    if args.export:
+        exporter_json(rapport, args.export)
+
+    # ── Résumé final ──────────────────────────────────────────────────────
+    print("\n" + "─" * 65)
+    print("  [✔] Audit terminé avec succès.")
+    print("─" * 65 + "\n")
+
+
+if __name__ == "__main__":
+    main()
