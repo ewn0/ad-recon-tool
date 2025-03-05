@@ -189,20 +189,3 @@ def creer_connexion(
         return None
 
     except LDAPException as erreur:
-        # Toute autre erreur LDAP non anticipée
-        print(f"\n[✘] Erreur LDAP inattendue : {erreur}")
-        return None
-
-    # ── Étape 4 : Confirmation de connexion ───────────────────────────────
-    print(f"[✔] Connexion LDAP établie avec succès en tant que : {user_ntlm}")
-
-    if verbose:
-        # Affiche les informations du serveur AD récupérées
-        print(f"\n    [>] Informations AD :")
-        print(f"        Nom DNS : {serveur.info.other.get('dnsHostName', ['N/A'])[0]}")
-        print(f"        Niveau fonctionnel forêt : "
-              f"{serveur.info.other.get('forestFunctionality', ['N/A'])[0]}")
-        print(f"        Niveau fonctionnel domaine : "
-              f"{serveur.info.other.get('domainFunctionality', ['N/A'])[0]}")
-
-    return connexion

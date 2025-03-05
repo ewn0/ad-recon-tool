@@ -312,31 +312,3 @@ def lister_machines_inactives(
             jours_inactif = "?"
             date_str = "Jamais"
 
-        donnees = {
-            "nom": str(entree.cn),
-            "os": str(entree.operatingSystem) if entree.operatingSystem else "Inconnu",
-            "dns": str(entree.dNSHostName) if entree.dNSHostName else "N/A",
-            "derniere_connexion": date_str,
-            "jours_inactif": jours_inactif,
-        }
-        resultats.append(donnees)
-        lignes_tableau.append([
-            donnees["nom"],
-            donnees["os"],
-            donnees["derniere_connexion"],
-            str(donnees["jours_inactif"]),
-        ])
-
-    afficher_tableau(
-        titre=f"Machines inactives (> {seuil_jours} jours)",
-        en_tetes=["Nom machine", "Système d'exploitation", "Dernière connexion", "Jours inactif"],
-        lignes=lignes_tableau,
-    )
-
-    if resultats:
-        print(
-            "\n  [ℹ] Recommandation : Vérifier si ces machines sont encore utilisées.\n"
-            "      Si non : désactiver puis supprimer le compte ordinateur de l'AD."
-        )
-
-    return resultats
